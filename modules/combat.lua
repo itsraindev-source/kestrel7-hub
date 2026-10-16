@@ -2,24 +2,20 @@ return function(Util, Config)
     local RunService = game:GetService("RunService")
     local Players = game:GetService("Players")
     local LP = Players.LocalPlayer
-    local VirtualUser = game:GetService("VirtualUser")
 
-    -- Mob Aura: swing at nearest enemy in range
+    -- Mob Aura
     RunService.Heartbeat:Connect(function()
         if not Config.Combat.Aura then return end
         local char = LP.Character
-        if not char or not char:FindFirstChildOfClass("Humanoid") then return end
+        if not char then return end
         local hrp = char:FindFirstChild("HumanoidRootPart")
         if not hrp then return end
 
-        local enemies = workspace:FindFirstChild("Enemies")
-        if not enemies then return end
-
+        local list = Util.getAllEnemies()
         local nearest, nearestDist = nil, Config.Combat.AuraRange
-        for _, m in ipairs(enemies:GetChildren()) do
+        for _, m in ipairs(list) do
             local mhrp = m:FindFirstChild("HumanoidRootPart")
-            local mhum = m:FindFirstChildOfClass("Humanoid")
-            if mhrp and mhum and mhum.Health > 0 then
+            if mhrp then
                 local d = Util.dist(hrp, mhrp)
                 if d < nearestDist then
                     nearest, nearestDist = m, d
@@ -30,14 +26,12 @@ return function(Util, Config)
         if nearest then
             local tool = char:FindFirstChildOfClass("Tool")
             if tool then
-                tool:Activate()
-            else
-                VirtualUser:Button1Down(Vector2.new(0, 0))
+                pcall(function() tool:Activate() end)
             end
         end
     end)
 
-    -- Fast Attack: spam tool activate at high frequency
+    -- Fast Attack: independent from Aura
     task.spawn(function()
         while task.wait(0.08) do
             if not Config.Farm.FastAttack then continue end
@@ -51,13 +45,14 @@ return function(Util, Config)
         end
     end)
 
-    -- Aim Lock: point camera at nearest player
+    -- Aim Lock
     RunService.RenderStepped:Connect(function()
         if not Config.Combat.AimLock then return end
         local cam = workspace.CurrentCamera
         local char = LP.Character
-        if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-        local hrp = char.HumanoidRootPart
+        if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
 
         local nearest, nearestDist = nil, math.huge
         for _, p in ipairs(Players:GetPlayers()) do
@@ -78,7 +73,7 @@ return function(Util, Config)
         end
     end)
 
-    -- Magnet Fruit stage tracker (heuristic)
+    -- Magnet fruit stage tracker
     task.spawn(function()
         while task.wait(1) do
             if not Util.hasMagnetFruit() then continue end

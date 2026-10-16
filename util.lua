@@ -9,6 +9,34 @@ local Lighting = game:GetService("Lighting")
 
 local LP = Players.LocalPlayer
 
+local NPC_NAMES = {
+    ["Set Home Point"] = true,
+    ["Guest Giver"] = true,
+    ["Haunted Castle Guest Giver"] = true,
+    ["Sword Dealer"] = true,
+    ["Blox Fruit Dealer"] = true,
+    ["Weapon Dealer"] = true,
+    ["Fighting Style Dealer"] = true,
+    ["Ability Teacher"] = true,
+    ["Blacksmith"] = true,
+    ["Barber"] = true,
+    ["Awakened Ice Admiral"] = true,
+    ["Legendary Sword Dealer"] = true,
+}
+
+function Util.isNPC(model)
+    if not model or not model.Name then return true end
+    if NPC_NAMES[model.Name] then return true end
+    local n = model.Name
+    if n:find("Dealer") or n:find("Shop") or n:find("Quest")
+       or n:find("Giver") or n:find("Point") or n:find("Blacksmith")
+       or n:find("Barber") or n:find("Teacher") or n:find("Master") then
+        return true
+    end
+    if Players:GetPlayerFromCharacter(model) then return true end
+    return false
+end
+
 function Util.getRemotes()
     local r = {}
     local rs = ReplicatedStorage:FindFirstChild("Remotes")
@@ -27,6 +55,24 @@ function Util.getRemotes()
 end
 
 Util.Remotes = Util.getRemotes()
+
+-- Universal remote fetch from gc
+function Util.fetchRemote(name)
+    if Util.Remotes[name] then return Util.Remotes[name] end
+    for _, v in pairs(getgc(true)) do
+        if type(v) == "table" then
+            for k, remote in pairs(v) do
+                if type(k) == "string" and k == name
+                   and typeof(remote) == "Instance"
+                   and (remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction")) then
+                    Util.Remotes[name] = remote
+                    return remote
+                end
+            end
+        end
+    end
+    return nil
+end
 
 function Util.vu()
     LP.Idled:Connect(function()
@@ -58,15 +104,17 @@ function Util.tweenTo(pos, speed)
     bp.Position = pos
     bp.Parent = hrp
     task.wait(speed or 0.1)
-    bp:Destroy()
+    if bp and bp.Parent then bp:Destroy() end
 end
 
 function Util.notify(title, text)
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = title,
-        Text = text,
-        Duration = 4,
-    })
+    pcall(function()
+        game:GetService("StarterGui"):SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = 4,
+        })
+    end)
 end
 
 function Util.isMagnetEvent()
@@ -76,26 +124,40 @@ function Util.isMagnetEvent()
             if child.Name:find("Magnet") then return true end
         end
     end
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if obj.Name:find("Scrap") or obj.Name:find("Magnet") then
-            return true
+    local enemies = workspace:FindFirstChild("Enemies")
+    if enemies then
+        for _, m in ipairs(enemies:GetChildren()) do
+            if m.Name:find("Magnetized") or m.Name:find("Overcharged") then
+                return true
+            end
         end
     end
     return false
 end
 
-function Util.findMagnetMobs()
-    local mobs = {}
+-- PRIMARY enemy fetcher. Targets workspace.Enemies.
+function Util.getAllEnemies()
+    local list = {}
     local enemies = workspace:FindFirstChild("Enemies")
-    if not enemies then return mobs end
+    if not enemies then return list end
     for _, m in ipairs(enemies:GetChildren()) do
         local hum = m:FindFirstChildOfClass("Humanoid")
         local hrp = m:FindFirstChild("HumanoidRootPart")
         if hum and hrp and hum.Health > 0 then
-            local name = m.Name
-            if name:find("Magnetized") or name:find("Overcharged") then
-                table.insert(mobs, m)
+            if not Util.isNPC(m) then
+                table.insert(list, m)
             end
+        end
+    end
+    return list
+end
+
+function Util.findMagnetMobs()
+    local mobs = {}
+    for _, m in ipairs(Util.getAllEnemies()) do
+        local n = m.Name
+        if n:find("Magnetized") or n:find("Overcharged") then
+            table.insert(mobs, m)
         end
     end
     return mobs
@@ -113,14 +175,43 @@ function Util.hasMagnetFruit()
 end
 
 function Util.getTokenBalance()
-    local remotes = Util.Remotes
-    local tokenRemote = remotes["MagnetTokenCheck"] or remotes["GachaCheck"]
+    local tokenRemote = Util.fetchRemote("MagnetTokenCheck")
+        or Util.fetchRemote("GachaCheck")
+        or Util.fetchRemote("CommF_")
     if not tokenRemote then return 0 end
     local ok, balance = pcall(function()
         return tokenRemote:InvokeServer("MagnetTokens")
     end)
     if ok and type(balance) == "number" then return balance end
     return 0
+end
+
+-- Quest interaction. Universal fallback set.
+function Util.startQuest(npcName, level)
+    local candidates = {
+        Util.fetchRemote("CommF_"),
+        Util.fetchRemote("CommE_"),
+        Util.fetchRemote("QuestSystem"),
+        Util.fetchRemote("QuestRemote"),
+    }
+    for _, remote in ipairs(candidates) do
+        if remote then
+            local ok = pcall(function()
+                remote:InvokeServer("StartQuest", npcName, level)
+            end)
+            if ok then return true end
+        end
+    end
+    return false
+end
+
+function Util.getLevel()
+    local data = LP:FindFirstChild("Data")
+    if data then
+        local lvl = data:FindFirstChild("Level")
+        if lvl then return lvl.Value end
+    end
+    return 1
 end
 
 return Util
